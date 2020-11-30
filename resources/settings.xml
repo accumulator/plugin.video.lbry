@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings>
+  <category label="Options">
+    <setting id="lbry_api_url" type="text" option="urlencoded" label="API Server" default="http://localhost:5279"/>
+    <setting id="nsfw" type="bool" label="NSFW" default="false"/>
+    <setting id="items_per_page" type="number" label="Items per page" default="20"/>
+    <setting type="lsep" label="Kludges"/>
+    <setting id="server_filter_disable" type="bool" label="Server filters time out" default="false"/>
+  </category>
+</settings>
