@@ -1,20 +1,28 @@
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import
 
 import xbmc
 import xbmcaddon
 from xbmcgui import ListItem, Dialog, NOTIFICATION_ERROR
-from xbmcplugin import addDirectoryItem, addDirectoryItems, endOfDirectory, setContent
+from xbmcplugin import addDirectoryItem, addDirectoryItems, endOfDirectory
 
 import routing
 import requests
-import urllib
 import time
 
+# python2 and 3
+try:
+    from urllib import quote,unquote,quote_plus,unquote_plus
+except:
+    from urllib.parse import quote,unquote,quote_plus,unquote_plus
+
 from resources.lib.local import *
+from resources.lib.exception import *
 
 ADDON = xbmcaddon.Addon()
+tr = ADDON.getLocalizedString
 
-lbry_api_url = urllib.unquote(ADDON.getSetting('lbry_api_url'))
+lbry_api_url = unquote(ADDON.getSetting('lbry_api_url'))
 if lbry_api_url == '':
     raise Exception('Lbry API URL is undefined.')
 
@@ -25,22 +33,49 @@ plugin = routing.Plugin()
 ph = plugin.handle
 dialog = Dialog()
 
-def call_rpc(method, params={}):
+def call_rpc(method, params={}, errdialog=True):
     try:
         xbmc.log('call_rpc: url=' + lbry_api_url + ', method=' + method + ', params=' + str(params))
         result = requests.post(lbry_api_url, json={'method': method, 'params': params})
         result.raise_for_status()
         rjson = result.json()
         if 'error' in rjson:
-            raise Exception(rjson['error']['message'])
+            raise PluginException(rjson['error']['message'])
         return result.json()['result']
+    except requests.exceptions.ConnectionError as e:
+        if errdialog:
+            dialog.notification(tr(30105), tr(30106), NOTIFICATION_ERROR)
+        raise PluginException(e)
+    except requests.exceptions.HTTPError as e:
+        if errdialog:
+            dialog.notification(tr(30101), str(e), NOTIFICATION_ERROR)
+        raise PluginException(e)
+    except PluginException as e:
+        if errdialog:
+            dialog.notification(tr(30102), str(e), NOTIFICATION_ERROR)
+        raise e
     except Exception as e:
         xbmc.log('call_rpc exception:' + str(e))
         raise e
 
-def result_to_video_list(result):
+def serialize_uri(item):
+    # all uris passed via kodi's routing system must be utf-8 encoded and urlquoted
+    if type(item) is dict:
+        return quote(item['name'].encode('utf-8') + '#' + item['claim_id'].encode('utf-8'))
+    else:
+        return quote(item.encode('utf-8'))
+
+def deserialize_uri(item):
+    # all uris passed via kodi's routing system must be utf-8 encoded and urlquoted
+    item = str(item) # we get item as unicode
+    return unquote(item).decode('utf-8')
+
+def result_to_video_list(result, playlist='', channel=''):
     items = []
-    for item in result['items']:
+    for item in result:
+        if not 'value_type' in item:
+            xbmc.log(str(item))
+            continue
         if item['value_type'] == 'stream' and item['value']['stream_type'] == 'video':
             # nsfw?
             if 'tags' in item['value']:
@@ -70,30 +105,43 @@ def result_to_video_list(result):
                 infoLabels['premiered'] = time.strftime('%Y-%m-%d',timestamp)
             if 'video' in item['value'] and 'duration' in item['value']['video']:
                 infoLabels['duration'] = str(item['value']['video']['duration'])
+
+            if playlist == '':
+                menu.append((
+                    tr(30212) % tr(30211), 'RunPlugin(%s)' % plugin.url_for(plugin_playlist_add, name=quote(tr(30211)), uri=serialize_uri(item))
+                ))
+            else:
+                menu.append((
+                    tr(30213) % tr(30211), 'RunPlugin(%s)' % plugin.url_for(plugin_playlist_del, name=quote(tr(30211)), uri=serialize_uri(item))
+                ))
+
+            menu.append((
+                tr(30208), 'RunPlugin(%s)' % plugin.url_for(claim_download, uri=serialize_uri(item))
+            ))
+
             if 'signing_channel' in item and 'name' in item['signing_channel']:
                 ch_name = item['signing_channel']['name']
+                ch_claim = item['signing_channel']['claim_id']
                 ch_title = ''
                 if 'value' in item['signing_channel'] and 'title' in item['signing_channel']['value']:
                     ch_title = item['signing_channel']['value']['title']
 
-                plot = '[B]' + ch_name + '[/B]\n' + plot
+                plot = '[B]' + (ch_title if ch_title.strip() != '' else ch_name) + '[/B]\n' + plot
 
-                infoLabels['studio'] = ch_title if ch_title != '' else ch_name
+                infoLabels['studio'] = ch_name
 
+                if channel == '':
+                    menu.append((
+                        tr(30207) % ch_name, 'Container.Update(%s)' % plugin.url_for(lbry_channel, uri=serialize_uri(item['signing_channel']),page=1)
+                    ))
                 menu.append((
-                    'Follow ' + ch_name, 'RunPlugin(%s)' % plugin.url_for(plugin_follow, name=urllib.quote(item['signing_channel']['name'].encode('utf-8')), claim_id=item['signing_channel']['claim_id'])
-                ))
-                menu.append((
-                    'Go to ' + ch_name, 'Container.Update(%s)' % plugin.url_for(lbry_channel, name=urllib.quote(ch_name.encode('utf-8')), claim_id=item['signing_channel']['claim_id'],page=1)
-                ))
-                menu.append((
-                    'Download', 'RunPlugin(%s)' % plugin.url_for(claim_download, name=urllib.quote(item['normalized_name'].encode('utf-8')), claim_id=item['claim_id'])
+                    tr(30205) % ch_name, 'RunPlugin(%s)' % plugin.url_for(plugin_follow, uri=serialize_uri(item['signing_channel']))
                 ))
 
             infoLabels['plot'] = plot
             li.setInfo('video', infoLabels)
 
-            url = plugin.url_for(claim_play, name=urllib.quote(item['normalized_name'].encode('utf-8')), claim_id=item['claim_id'])
+            url = plugin.url_for(claim_play, uri=serialize_uri(item))
 
             if len(menu) > 0:
                 li.addContextMenuItems(menu)
@@ -107,27 +155,47 @@ def result_to_video_list(result):
 
 @plugin.route('/')
 def lbry_root():
-    addDirectoryItem(ph, plugin.url_for(plugin_follows), ListItem('Followed Channels'), True)
-    addDirectoryItem(ph, plugin.url_for(lbry_new, page=1), ListItem('New'), True)
-    addDirectoryItem(ph, plugin.url_for(lbry_search), ListItem('Search'), True)
+    addDirectoryItem(ph, plugin.url_for(plugin_follows), ListItem(tr(30200)), True)
+    addDirectoryItem(ph, plugin.url_for(plugin_playlists), ListItem(tr(30210)), True)
+    addDirectoryItem(ph, plugin.url_for(lbry_new, page=1), ListItem(tr(30202)), True)
+    addDirectoryItem(ph, plugin.url_for(lbry_search), ListItem(tr(30201)), True)
     endOfDirectory(ph)
 
-@plugin.route('/new/<page>')
-def lbry_new(page):
-    page = int(page)
-    query = {'page': page, 'page_size': items_per_page, 'order_by': 'release_time'}
-    if not ADDON.getSettingBool('server_filter_disable'):
-        query['stream_types'] = ['video']
-    try:
-        result = call_rpc('claim_search', query)
-        items = result_to_video_list(result)
-        addDirectoryItems(ph, items, result['page_size'])
-        total_pages = int(result['total_pages'])
-        if total_pages > 1 and page < total_pages:
-            addDirectoryItem(ph, plugin.url_for(lbry_new, page=page+1), ListItem('Next Page'), True)
-    except Exception as e:
-        dialog.notification('Problem doing claim search', str(e), NOTIFICATION_ERROR)
+@plugin.route('/playlists')
+def plugin_playlists():
+    addDirectoryItem(ph, plugin.url_for(plugin_playlist, name=quote_plus(tr(30211))), ListItem(tr(30211)), True)
     endOfDirectory(ph)
+
+@plugin.route('/playlist/list/<name>')
+def plugin_playlist(name):
+    name = unquote_plus(name)
+    uris = load_playlist(name)
+    claim_info = call_rpc('resolve', {'urls': uris})
+    items = []
+    for uri in uris:
+        items.append(claim_info[uri])
+    items = result_to_video_list(items, playlist=name)
+    addDirectoryItems(ph, items, items_per_page)
+    endOfDirectory(ph)
+
+@plugin.route('/playlist/add/<name>/<uri>')
+def plugin_playlist_add(name,uri):
+    name = unquote_plus(name)
+    uri = deserialize_uri(uri)
+    xbmc.log('uri otype = ' + str(type(uri)))
+    items = load_playlist(name)
+    if not uri in items:
+        items.append(uri)
+    save_playlist(name, items)
+
+@plugin.route('/playlist/del/<name>/<uri>')
+def plugin_playlist_del(name,uri):
+    name = unquote_plus(name)
+    uri = deserialize_uri(uri)
+    items = load_playlist(name)
+    items.remove(uri)
+    save_playlist(name, items)
+    xbmc.executebuiltin('Container.Refresh')
 
 @plugin.route('/follows')
 def plugin_follows():
@@ -135,128 +203,160 @@ def plugin_follows():
     resolve_uris = []
     for (name,claim_id) in channels:
         resolve_uris.append(name+'#'+claim_id)
-    channel_info = call_rpc('resolve', {'urls': resolve_uris})
+    channel_infos = call_rpc('resolve', {'urls': resolve_uris})
 
     for (name,claim_id) in channels:
         uri = name+'#'+claim_id
+        channel_info = channel_infos[uri]
         li = ListItem(name)
-        if not 'error' in channel_info[uri]:
+        if not 'error' in channel_info:
             plot = ''
-            if 'title' in channel_info[uri]['value']:
-                plot = plot + '[B]%s[/B]\n' % channel_info[uri]['value']['title']
-            if 'description' in channel_info[uri]['value']:
-                plot = plot + channel_info[uri]['value']['description']
+            if 'title' in channel_info['value'] and channel_info['value']['title'].strip() != '':
+                plot = '[B]%s[/B]\n' % channel_info['value']['title']
+            else:
+                plot = '[B]%s[/B]\n' % channel_info['name']
+            if 'description' in channel_info['value']:
+                plot = plot + channel_info['value']['description']
             infoLabels = { 'plot': plot }
             li.setInfo('video', infoLabels)
 
-            if 'thumbnail' in channel_info[uri]['value'] and 'url' in channel_info[uri]['value']['thumbnail']:
+            if 'thumbnail' in channel_info['value'] and 'url' in channel_info['value']['thumbnail']:
                 li.setArt({
-                    'thumb': channel_info[uri]['value']['thumbnail']['url'],
-                    'poster': channel_info[uri]['value']['thumbnail']['url'],
-                    'fanart': channel_info[uri]['value']['thumbnail']['url']
+                    'thumb': channel_info['value']['thumbnail']['url'],
+                    'poster': channel_info['value']['thumbnail']['url'],
+                    'fanart': channel_info['value']['thumbnail']['url']
                 })
 
         menu = []
         menu.append((
-            'Unfollow Channel', 'RunPlugin(%s)' % plugin.url_for(plugin_unfollow, name=urllib.quote(name), claim_id=claim_id)
+            tr(30206) % name, 'RunPlugin(%s)' % plugin.url_for(plugin_unfollow, uri=serialize_uri(uri))
         ))
         li.addContextMenuItems(menu)
-        addDirectoryItem(ph, plugin.url_for(lbry_channel, name=urllib.quote(name), claim_id=claim_id, page=1), li, True)
+        addDirectoryItem(ph, plugin.url_for(lbry_channel, uri=serialize_uri(uri), page=1), li, True)
     endOfDirectory(ph)
 
-@plugin.route('/follows/add/<name>/<claim_id>')
-def plugin_follow(name, claim_id):
-    name = urllib.unquote(name)
+@plugin.route('/follows/add/<uri>')
+def plugin_follow(uri):
+    uri = deserialize_uri(uri)
     channels = load_channel_subs()
-    channel = (str(name),str(claim_id))
+    channel = (uri.split('#')[0],uri.split('#')[1])
     if not channel in channels:
         channels.append(channel)
     save_channel_subs(channels)
 
-@plugin.route('/follows/del/<name>/<claim_id>')
-def plugin_unfollow(name, claim_id):
-    name = urllib.unquote(name)
+@plugin.route('/follows/del/<uri>')
+def plugin_unfollow(uri):
+    uri = deserialize_uri(uri)
     channels = load_channel_subs()
-    channels.remove((str(name),str(claim_id)))
+    channels.remove((uri.split('#')[0],uri.split('#')[1]))
     save_channel_subs(channels)
     xbmc.executebuiltin('Container.Refresh')
 
-@plugin.route('/channel/<name>/<claim_id>')
-def lbry_channel_landing(name,claim_id):
-    lbry_channel(name,claim_id,1)
-
-@plugin.route('/channel/<name>/<claim_id>/<page>')
-def lbry_channel(name,claim_id,page):
-    name = urllib.unquote(name)
+@plugin.route('/new/<page>')
+def lbry_new(page):
     page = int(page)
-    query = {'page': page, 'page_size': items_per_page, 'order_by': 'release_time', 'channel': name+'#'+claim_id}
+    query = {'page': page, 'page_size': items_per_page, 'order_by': 'release_time'}
     if not ADDON.getSettingBool('server_filter_disable'):
         query['stream_types'] = ['video']
-    try:
-        result = call_rpc('claim_search', query)
-        items = result_to_video_list(result)
-        addDirectoryItems(ph, items, result['page_size'])
-        total_pages = int(result['total_pages'])
-        if total_pages > 1 and page < total_pages:
-            addDirectoryItem(ph, plugin.url_for(lbry_channel, name=urllib.quote(name), claim_id=claim_id, page=page+1), ListItem('Next Page'), True)
-    except Exception as e:
-        dialog.notification('Problem doing claim search', str(e), NOTIFICATION_ERROR)
+    result = call_rpc('claim_search', query)
+    items = result_to_video_list(result['items'])
+    addDirectoryItems(ph, items, result['page_size'])
+    total_pages = int(result['total_pages'])
+    if total_pages > 1 and page < total_pages:
+        addDirectoryItem(ph, plugin.url_for(lbry_new, page=page+1), ListItem(tr(30203)), True)
+    endOfDirectory(ph)
+
+@plugin.route('/channel/<uri>')
+def lbry_channel_landing(uri):
+    lbry_channel(uri,1)
+
+@plugin.route('/channel/<uri>/<page>')
+def lbry_channel(uri,page):
+    uri = deserialize_uri(uri)
+    page = int(page)
+    query = {'page': page, 'page_size': items_per_page, 'order_by': 'release_time', 'channel': uri}
+    if not ADDON.getSettingBool('server_filter_disable'):
+        query['stream_types'] = ['video']
+    result = call_rpc('claim_search', query)
+    items = result_to_video_list(result['items'], channel=uri)
+    addDirectoryItems(ph, items, result['page_size'])
+    total_pages = int(result['total_pages'])
+    if total_pages > 1 and page < total_pages:
+        addDirectoryItem(ph, plugin.url_for(lbry_channel, uri=serialize_uri(uri), page=page+1), ListItem(tr(30203)), True)
     endOfDirectory(ph)
 
 @plugin.route('/search')
 def lbry_search():
-    query = dialog.input('Enter search terms')
-    lbry_search_pager(urllib.quote_plus(query), 1)
+    query = dialog.input(tr(30209))
+    lbry_search_pager(quote_plus(query), 1)
 
 @plugin.route('/search/<query>/<page>')
 def lbry_search_pager(query, page):
-    query = urllib.unquote_plus(query)
-    xbmc.log('q=' + query + ' p=' + str(page))
+    query = unquote_plus(query)
     page = int(page)
     if query != '':
         params = {'text': query, 'page': page, 'page_size': items_per_page}
+        #always times out on server :(
         #if not ADDON.getSettingBool('server_filter_disable'):
         #    params['stream_types'] = ['video']
         result = call_rpc('claim_search', params)
-        items = result_to_video_list(result)
+        items = result_to_video_list(result['items'])
         addDirectoryItems(ph, items, result['page_size'])
         total_pages = int(result['total_pages'])
         if total_pages > 1 and page < total_pages:
-            addDirectoryItem(ph, plugin.url_for(lbry_search_pager, query=urllib.quote_plus(query), page=page+1), ListItem('Next Page'), True)
+            addDirectoryItem(ph, plugin.url_for(lbry_search_pager, query=quote_plus(query), page=page+1), ListItem(tr(30203)), True)
         endOfDirectory(ph)
     else:
         endOfDirectory(ph, False)
 
-@plugin.route('/play/<name>/<claim_id>')
-def claim_play(name, claim_id):
-    uri = urllib.unquote(name) + '#' + claim_id
+@plugin.route('/play/<uri>')
+def claim_play(uri):
+    uri = deserialize_uri(uri)
 
-    claim_info = call_rpc('resolve', {'urls': uri})
-    if 'error' in claim_info[uri]:
-        dialog.notification('error in claim info uri', claim_info[uri]['error']['name'], NOTIFICATION_ERROR)
+    claim_info = call_rpc('resolve', {'urls': uri})[uri]
+    if 'error' in claim_info:
+        dialog.notification(tr(30102), claim_info['error']['name'], NOTIFICATION_ERROR)
         return
 
-    if 'fee' in claim_info[uri]['value']:
-        dialog.notification('Payment required', 'Video is not free, and payment is not implemented yet', NOTIFICATION_ERROR)
-        return
+    if 'fee' in claim_info['value']:
+        if claim_info['value']['fee']['currency'] != 'LBC':
+            dialog.notification(tr(30204), tr(30103), NOTIFICATION_ERROR)
+            return
+
+        # paid already?
+        purchase_info = call_rpc('purchase_list', {'claim_id': uri.split('#')[1]})
+        if len(purchase_info['items']) == 0:
+            account_list = call_rpc('account_list')
+            for account in account_list['items']:
+                if account['is_default']:
+                    balance = float(str(account['satoshis'])[:-6]) / float(100)
+            dtext = tr(30214) % (float(claim_info['value']['fee']['amount']), str(claim_info['value']['fee']['currency']))
+            dtext = dtext + '\n\n' + tr(30215) % (balance, str(claim_info['value']['fee']['currency']))
+            if not dialog.yesno(tr(30204), dtext):
+                return
 
     result = call_rpc('get', {'uri': uri, 'save_file': False})
-    xbmc.Player().play(result['streaming_url'].replace('0.0.0.0','127.0.0.1'))
+    stream_url = result['streaming_url'].replace('0.0.0.0','127.0.0.1')
 
-@plugin.route('/download/<name>/<claim_id>')
-def claim_download(name, claim_id):
-    uri = urllib.unquote(name) + '#' + claim_id
+    xbmc.Player().play(stream_url)
 
-    claim_info = call_rpc('resolve', {'urls': uri})
-    if 'error' in claim_info[uri]:
-        dialog.notification('error in claim info uri', claim_info[uri]['error']['name'], NOTIFICATION_ERROR)
+@plugin.route('/download/<uri>')
+def claim_download(uri):
+    uri = deserialize_uri(uri)
+
+    claim_info = call_rpc('resolve', {'urls': uri})[uri]
+    if 'error' in claim_info:
+        dialog.notification(tr(30102), claim_info['error']['name'], NOTIFICATION_ERROR)
         return
 
-    if 'fee' in claim_info[uri]['value']:
-        dialog.notification('Payment required', 'Video is not free, and payment is not implemented yet', NOTIFICATION_ERROR)
+    if 'fee' in claim_info['value']:
+        dialog.notification(tr(30204), tr(30103), NOTIFICATION_ERROR)
         return
 
     result = call_rpc('get', {'uri': uri, 'save_file': True})
 
 def run():
-    plugin.run()
+    try:
+        plugin.run()
+    except PluginException as e:
+        xbmc.log("PluginException: " + str(e))

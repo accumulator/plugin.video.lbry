@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.lbry" name="LBRY" version="0.0.1" provider-name="accumulator">
+<addon id="plugin.video.lbry" name="LBRY" version="0.1.0" provider-name="accumulator">
     <requires>
         <import addon="xbmc.python" version="2.25.0"/>
         <import addon="script.module.routing" version="0.2.3"/>
@@ -9,14 +9,15 @@
         <provides>video</provides>
     </extension>
     <extension point="xbmc.addon.metadata">
-        <summary lang="en">Plugin for LBRY</summary>
-        <description lang="en">LBRY is a secure, open, and community-run digital marketplace</description>
-        <language>en</language>
+        <summary lang="en_GB">Plugin for LBRY</summary>
+        <description lang="en_GB">LBRY is a secure, open, and community-run digital marketplace</description>
+        <language>en_GB</language>
         <platform>all</platform>
         <license>GPL2</license>
         <source>https://github.com/accumulator/plugin.video.lbry</source>
         <assets>
             <icon>resources/assets/256x256.png</icon>
+            <fanart>resources/assets/fanart.jpg</fanart>
         </assets>
     </extension>
 </addon>
