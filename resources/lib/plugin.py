@@ -4,7 +4,7 @@ from __future__ import absolute_import
 import xbmc
 import xbmcaddon
 from xbmcgui import ListItem, Dialog, NOTIFICATION_ERROR
-from xbmcplugin import addDirectoryItem, addDirectoryItems, endOfDirectory
+from xbmcplugin import addDirectoryItem, addDirectoryItems, endOfDirectory, setContent, setResolvedUrl
 
 import routing
 import requests
@@ -21,7 +21,6 @@ from resources.lib.exception import *
 
 ADDON = xbmcaddon.Addon()
 tr = ADDON.getLocalizedString
-
 lbry_api_url = unquote(ADDON.getSetting('lbry_api_url'))
 if lbry_api_url == '':
     raise Exception('Lbry API URL is undefined.')
@@ -31,6 +30,7 @@ nsfw = ADDON.getSettingBool('nsfw')
 
 plugin = routing.Plugin()
 ph = plugin.handle
+setContent(ph, 'videos')
 dialog = Dialog()
 
 def call_rpc(method, params={}, errdialog=True):
@@ -70,7 +70,77 @@ def deserialize_uri(item):
     item = str(item) # we get item as unicode
     return unquote(item).decode('utf-8')
 
-def result_to_video_list(result, playlist='', channel=''):
+def to_video_listitem(item, playlist='', channel='', repost=None):
+    li = ListItem(item['value']['title'] if 'title' in item['value'] else item['file_name'] if 'file_name' in item else '')
+    li.setProperty('IsPlayable', 'true')
+    if 'thumbnail' in item['value'] and 'url' in item['value']['thumbnail']:
+        li.setArt({
+            'thumb': item['value']['thumbnail']['url'],
+            'poster': item['value']['thumbnail']['url'],
+            'fanart': item['value']['thumbnail']['url']
+        })
+
+    infoLabels = {}
+    menu = []
+    plot = ''
+    if 'description' in item['value']:
+        plot = item['value']['description']
+    if 'author' in item['value']:
+        infoLabels['writer'] = item['value']['author']
+    elif 'channel_name' in item:
+        infoLabels['writer'] = item['channel_name']
+    if 'timestamp' in item:
+        timestamp = time.localtime(item['timestamp'])
+        infoLabels['year'] = timestamp.tm_year
+        infoLabels['premiered'] = time.strftime('%Y-%m-%d',timestamp)
+    if 'video' in item['value'] and 'duration' in item['value']['video']:
+        infoLabels['duration'] = str(item['value']['video']['duration'])
+
+    if playlist == '':
+        menu.append((
+            tr(30212) % tr(30211), 'RunPlugin(%s)' % plugin.url_for(plugin_playlist_add, name=quote(tr(30211)), uri=serialize_uri(item))
+        ))
+    else:
+        menu.append((
+            tr(30213) % tr(30211), 'RunPlugin(%s)' % plugin.url_for(plugin_playlist_del, name=quote(tr(30211)), uri=serialize_uri(item))
+        ))
+
+    menu.append((
+        tr(30208), 'RunPlugin(%s)' % plugin.url_for(claim_download, uri=serialize_uri(item))
+    ))
+
+    if 'signing_channel' in item and 'name' in item['signing_channel']:
+        ch_name = item['signing_channel']['name']
+        ch_claim = item['signing_channel']['claim_id']
+        ch_title = ''
+        if 'value' in item['signing_channel'] and 'title' in item['signing_channel']['value']:
+            ch_title = item['signing_channel']['value']['title']
+
+        plot = '[B]' + (ch_title if ch_title.strip() != '' else ch_name) + '[/B]\n' + plot
+
+        infoLabels['studio'] = ch_name
+
+        if channel == '':
+            menu.append((
+                tr(30207) % ch_name, 'Container.Update(%s)' % plugin.url_for(lbry_channel, uri=serialize_uri(item['signing_channel']),page=1)
+            ))
+        menu.append((
+            tr(30205) % ch_name, 'RunPlugin(%s)' % plugin.url_for(plugin_follow, uri=serialize_uri(item['signing_channel']))
+        ))
+
+    if repost != None:
+        if 'signing_channel' in repost:
+            plot = ('[COLOR yellow]Repost in %s[/COLOR]\n' % repost['signing_channel']['name']) + plot
+        else:
+            plot = '[COLOR yellow]Repost[/COLOR]\n' + plot
+
+    infoLabels['plot'] = plot
+    li.setInfo('video', infoLabels)
+    li.addContextMenuItems(menu)
+
+    return li
+
+def result_to_itemlist(result, playlist='', channel=''):
     items = []
     for item in result:
         if not 'value_type' in item:
@@ -82,71 +152,26 @@ def result_to_video_list(result, playlist='', channel=''):
                 if 'mature' in item['value']['tags'] and not nsfw:
                     continue
 
-            li = ListItem(item['value']['title'] if 'title' in item['value'] else item['file_name'] if 'file_name' in item else '')
-            if 'thumbnail' in item['value'] and 'url' in item['value']['thumbnail']:
-                li.setArt({
-                    'thumb': item['value']['thumbnail']['url'],
-                    'poster': item['value']['thumbnail']['url'],
-                    'fanart': item['value']['thumbnail']['url']
-                })
-
-            infoLabels = {}
-            menu = []
-            plot = ''
-            if 'description' in item['value']:
-                plot = item['value']['description']
-            if 'author' in item['value']:
-                infoLabels['writer'] = item['value']['author']
-            elif 'channel_name' in item:
-                infoLabels['writer'] = item['channel_name']
-            if 'timestamp' in item:
-                timestamp = time.localtime(item['timestamp'])
-                infoLabels['year'] = timestamp.tm_year
-                infoLabels['premiered'] = time.strftime('%Y-%m-%d',timestamp)
-            if 'video' in item['value'] and 'duration' in item['value']['video']:
-                infoLabels['duration'] = str(item['value']['video']['duration'])
-
-            if playlist == '':
-                menu.append((
-                    tr(30212) % tr(30211), 'RunPlugin(%s)' % plugin.url_for(plugin_playlist_add, name=quote(tr(30211)), uri=serialize_uri(item))
-                ))
-            else:
-                menu.append((
-                    tr(30213) % tr(30211), 'RunPlugin(%s)' % plugin.url_for(plugin_playlist_del, name=quote(tr(30211)), uri=serialize_uri(item))
-                ))
-
-            menu.append((
-                tr(30208), 'RunPlugin(%s)' % plugin.url_for(claim_download, uri=serialize_uri(item))
-            ))
-
-            if 'signing_channel' in item and 'name' in item['signing_channel']:
-                ch_name = item['signing_channel']['name']
-                ch_claim = item['signing_channel']['claim_id']
-                ch_title = ''
-                if 'value' in item['signing_channel'] and 'title' in item['signing_channel']['value']:
-                    ch_title = item['signing_channel']['value']['title']
-
-                plot = '[B]' + (ch_title if ch_title.strip() != '' else ch_name) + '[/B]\n' + plot
-
-                infoLabels['studio'] = ch_name
-
-                if channel == '':
-                    menu.append((
-                        tr(30207) % ch_name, 'Container.Update(%s)' % plugin.url_for(lbry_channel, uri=serialize_uri(item['signing_channel']),page=1)
-                    ))
-                menu.append((
-                    tr(30205) % ch_name, 'RunPlugin(%s)' % plugin.url_for(plugin_follow, uri=serialize_uri(item['signing_channel']))
-                ))
-
-            infoLabels['plot'] = plot
-            li.setInfo('video', infoLabels)
-
+            li = to_video_listitem(item, playlist, channel)
             url = plugin.url_for(claim_play, uri=serialize_uri(item))
 
-            if len(menu) > 0:
-                li.addContextMenuItems(menu)
+            items.append((url, li))
+        elif item['value_type'] == 'repost' and 'reposted_claim' in item and item['reposted_claim']['value_type'] == 'stream' and item['reposted_claim']['value']['stream_type'] == 'video':
+            stream_item = item['reposted_claim']
+            # nsfw?
+            if 'tags' in stream_item['value']:
+                if 'mature' in stream_item['value']['tags'] and not nsfw:
+                    continue
+
+            li = to_video_listitem(stream_item, playlist, channel, repost=item)
+            url = plugin.url_for(claim_play, uri=serialize_uri(stream_item))
 
             items.append((url, li))
+        elif item['value_type'] == 'channel':
+            li = ListItem('[B]%s[/B]' % item['name'])
+            li.setProperty('IsFolder','true')
+            url = plugin.url_for(lbry_channel, uri=serialize_uri(item['name'] + '#' + item['claim_id']),page=1)
+            items.append((url, li, True))
         else:
             xbmc.log('ignored item, value_type=' + item['value_type'])
             xbmc.log('item name=' + item['name'].encode('utf-8'))
@@ -174,7 +199,7 @@ def plugin_playlist(name):
     items = []
     for uri in uris:
         items.append(claim_info[uri])
-    items = result_to_video_list(items, playlist=name)
+    items = result_to_itemlist(items, playlist=name)
     addDirectoryItems(ph, items, items_per_page)
     endOfDirectory(ph)
 
@@ -259,7 +284,7 @@ def lbry_new(page):
     if not ADDON.getSettingBool('server_filter_disable'):
         query['stream_types'] = ['video']
     result = call_rpc('claim_search', query)
-    items = result_to_video_list(result['items'])
+    items = result_to_itemlist(result['items'])
     addDirectoryItems(ph, items, result['page_size'])
     total_pages = int(result['total_pages'])
     if total_pages > 1 and page < total_pages:
@@ -278,7 +303,7 @@ def lbry_channel(uri,page):
     if not ADDON.getSettingBool('server_filter_disable'):
         query['stream_types'] = ['video']
     result = call_rpc('claim_search', query)
-    items = result_to_video_list(result['items'], channel=uri)
+    items = result_to_itemlist(result['items'], channel=uri)
     addDirectoryItems(ph, items, result['page_size'])
     total_pages = int(result['total_pages'])
     if total_pages > 1 and page < total_pages:
@@ -300,7 +325,7 @@ def lbry_search_pager(query, page):
         #if not ADDON.getSettingBool('server_filter_disable'):
         #    params['stream_types'] = ['video']
         result = call_rpc('claim_search', params)
-        items = result_to_video_list(result['items'])
+        items = result_to_itemlist(result['items'])
         addDirectoryItems(ph, items, result['page_size'])
         total_pages = int(result['total_pages'])
         if total_pages > 1 and page < total_pages:
@@ -338,7 +363,9 @@ def claim_play(uri):
     result = call_rpc('get', {'uri': uri, 'save_file': False})
     stream_url = result['streaming_url'].replace('0.0.0.0','127.0.0.1')
 
-    xbmc.Player().play(stream_url)
+    (url,li) = result_to_itemlist([claim_info])[0]
+    li.setPath(stream_url)
+    setResolvedUrl(ph, True, li)
 
 @plugin.route('/download/<uri>')
 def claim_download(uri):
