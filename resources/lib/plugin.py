@@ -170,6 +170,12 @@ def result_to_itemlist(result, playlist='', channel=''):
         elif item['value_type'] == 'channel':
             li = ListItem('[B]%s[/B]' % item['name'])
             li.setProperty('IsFolder','true')
+            if 'thumbnail' in item['value'] and 'url' in item['value']['thumbnail']:
+                li.setArt({
+                    'thumb': item['value']['thumbnail']['url'],
+                    'poster': item['value']['thumbnail']['url'],
+                    'fanart': item['value']['thumbnail']['url']
+                })
             url = plugin.url_for(lbry_channel, uri=serialize_uri(item['name'] + '#' + item['claim_id']),page=1)
             items.append((url, li, True))
         else:
@@ -181,15 +187,16 @@ def result_to_itemlist(result, playlist='', channel=''):
 @plugin.route('/')
 def lbry_root():
     addDirectoryItem(ph, plugin.url_for(plugin_follows), ListItem(tr(30200)), True)
-    addDirectoryItem(ph, plugin.url_for(plugin_playlists), ListItem(tr(30210)), True)
+    #addDirectoryItem(ph, plugin.url_for(plugin_playlists), ListItem(tr(30210)), True)
+    addDirectoryItem(ph, plugin.url_for(plugin_playlist, name=quote_plus(tr(30211))), ListItem(tr(30211)), True)
     addDirectoryItem(ph, plugin.url_for(lbry_new, page=1), ListItem(tr(30202)), True)
     addDirectoryItem(ph, plugin.url_for(lbry_search), ListItem(tr(30201)), True)
     endOfDirectory(ph)
 
-@plugin.route('/playlists')
-def plugin_playlists():
-    addDirectoryItem(ph, plugin.url_for(plugin_playlist, name=quote_plus(tr(30211))), ListItem(tr(30211)), True)
-    endOfDirectory(ph)
+#@plugin.route('/playlists')
+#def plugin_playlists():
+#    addDirectoryItem(ph, plugin.url_for(plugin_playlist, name=quote_plus(tr(30211))), ListItem(tr(30211)), True)
+#    endOfDirectory(ph)
 
 @plugin.route('/playlist/list/<name>')
 def plugin_playlist(name):
@@ -320,7 +327,7 @@ def lbry_search_pager(query, page):
     query = unquote_plus(query)
     page = int(page)
     if query != '':
-        params = {'text': query, 'page': page, 'page_size': items_per_page}
+        params = {'text': query, 'page': page, 'page_size': items_per_page, 'order_by': 'release_time'}
         #always times out on server :(
         #if not ADDON.getSettingBool('server_filter_disable'):
         #    params['stream_types'] = ['video']
@@ -333,6 +340,20 @@ def lbry_search_pager(query, page):
         endOfDirectory(ph)
     else:
         endOfDirectory(ph, False)
+
+def user_payment_confirmed(claim_info):
+    # paid for claim already?
+    purchase_info = call_rpc('purchase_list', {'claim_id': claim_info['claim_id']})
+    if len(purchase_info['items']) > 0:
+        return True
+
+    account_list = call_rpc('account_list')
+    for account in account_list['items']:
+        if account['is_default']:
+            balance = float(str(account['satoshis'])[:-6]) / float(100)
+    dtext = tr(30214) % (float(claim_info['value']['fee']['amount']), str(claim_info['value']['fee']['currency']))
+    dtext = dtext + '\n\n' + tr(30215) % (balance, str(claim_info['value']['fee']['currency']))
+    return dialog.yesno(tr(30204), dtext)
 
 @plugin.route('/play/<uri>')
 def claim_play(uri):
@@ -348,17 +369,8 @@ def claim_play(uri):
             dialog.notification(tr(30204), tr(30103), NOTIFICATION_ERROR)
             return
 
-        # paid already?
-        purchase_info = call_rpc('purchase_list', {'claim_id': uri.split('#')[1]})
-        if len(purchase_info['items']) == 0:
-            account_list = call_rpc('account_list')
-            for account in account_list['items']:
-                if account['is_default']:
-                    balance = float(str(account['satoshis'])[:-6]) / float(100)
-            dtext = tr(30214) % (float(claim_info['value']['fee']['amount']), str(claim_info['value']['fee']['currency']))
-            dtext = dtext + '\n\n' + tr(30215) % (balance, str(claim_info['value']['fee']['currency']))
-            if not dialog.yesno(tr(30204), dtext):
-                return
+        if not user_payment_confirmed(claim_info):
+            return
 
     result = call_rpc('get', {'uri': uri, 'save_file': False})
     stream_url = result['streaming_url'].replace('0.0.0.0','127.0.0.1')
@@ -377,8 +389,12 @@ def claim_download(uri):
         return
 
     if 'fee' in claim_info['value']:
-        dialog.notification(tr(30204), tr(30103), NOTIFICATION_ERROR)
-        return
+        if claim_info['value']['fee']['currency'] != 'LBC':
+            dialog.notification(tr(30204), tr(30103), NOTIFICATION_ERROR)
+            return
+
+        if not user_payment_confirmed(claim_info):
+            return
 
     result = call_rpc('get', {'uri': uri, 'save_file': True})
 
