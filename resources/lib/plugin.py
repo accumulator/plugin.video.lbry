@@ -129,10 +129,10 @@ def to_video_listitem(item, playlist='', channel='', repost=None):
         ))
 
     if repost != None:
-        if 'signing_channel' in repost:
-            plot = ('[COLOR yellow]Repost in %s[/COLOR]\n' % repost['signing_channel']['name']) + plot
+        if 'signing_channel' in repost and 'name' in repost['signing_channel']:
+            plot = (('[COLOR yellow]%s[/COLOR]\n' % tr(30217)) % repost['signing_channel']['name']) + plot
         else:
-            plot = '[COLOR yellow]Repost[/COLOR]\n' + plot
+            plot = ('[COLOR yellow]%s[/COLOR]\n' % tr(30216)) + plot
 
     infoLabels['plot'] = plot
     li.setInfo('video', infoLabels)
@@ -214,7 +214,6 @@ def plugin_playlist(name):
 def plugin_playlist_add(name,uri):
     name = unquote_plus(name)
     uri = deserialize_uri(uri)
-    xbmc.log('uri otype = ' + str(type(uri)))
     items = load_playlist(name)
     if not uri in items:
         items.append(uri)

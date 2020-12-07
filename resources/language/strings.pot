@@ -134,3 +134,11 @@ msgstr ""
 msgctxt "#30215"
 msgid "Current balance: %.2f %s"
 msgstr ""
+
+msgctxt "#30216"
+msgid "Repost"
+msgstr ""
+
+msgctxt "#30217"
+msgid "Repost in %s"
+msgstr ""
