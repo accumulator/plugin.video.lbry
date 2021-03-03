@@ -10,11 +10,7 @@ import routing
 import requests
 import time
 
-# python2 and 3
-try:
-    from urllib import quote,unquote,quote_plus,unquote_plus
-except:
-    from urllib.parse import quote,unquote,quote_plus,unquote_plus
+from urllib.parse import quote,unquote,quote_plus,unquote_plus
 
 from resources.lib.local import *
 from resources.lib.exception import *
@@ -59,16 +55,15 @@ def call_rpc(method, params={}, errdialog=True):
         raise e
 
 def serialize_uri(item):
-    # all uris passed via kodi's routing system must be utf-8 encoded and urlquoted
+    # all uris passed via kodi's routing system must be urlquoted
     if type(item) is dict:
-        return quote(item['name'].encode('utf-8') + '#' + item['claim_id'].encode('utf-8'))
+        return quote(item['name'] + '#' + item['claim_id'])
     else:
-        return quote(item.encode('utf-8'))
+        return quote(item)
 
 def deserialize_uri(item):
-    # all uris passed via kodi's routing system must be utf-8 encoded and urlquoted
-    item = str(item) # we get item as unicode
-    return unquote(item).decode('utf-8')
+    # all uris passed via kodi's routing system must be urlquoted
+    return unquote(item)
 
 def to_video_listitem(item, playlist='', channel='', repost=None):
     li = ListItem(item['value']['title'] if 'title' in item['value'] else item['file_name'] if 'file_name' in item else '')
