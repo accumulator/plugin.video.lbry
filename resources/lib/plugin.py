@@ -141,7 +141,7 @@ def result_to_itemlist(result, playlist='', channel=''):
         if not 'value_type' in item:
             xbmc.log(str(item))
             continue
-        if item['value_type'] == 'stream' and item['value']['stream_type'] == 'video':
+        if item['value_type'] == 'stream' and 'stream_type' in item['value'] and item['value']['stream_type'] == 'video':
             # nsfw?
             if 'tags' in item['value']:
                 if 'mature' in item['value']['tags'] and not nsfw:
