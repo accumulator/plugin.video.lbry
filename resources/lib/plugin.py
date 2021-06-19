@@ -146,7 +146,7 @@ def result_to_itemlist(result, playlist='', channel=''):
         if not 'value_type' in item:
             xbmc.log(str(item))
             continue
-        if item['value_type'] == 'stream' and item['value']['stream_type'] == 'video':
+        if item['value_type'] == 'stream' and 'stream_type' in item['value'] and item['value']['stream_type'] == 'video':
             # nsfw?
             if 'tags' in item['value']:
                 if 'mature' in item['value']['tags'] and not nsfw:
@@ -187,6 +187,7 @@ def result_to_itemlist(result, playlist='', channel=''):
 @plugin.route('/')
 def lbry_root():
     addDirectoryItem(ph, plugin.url_for(plugin_follows), ListItem(tr(30200)), True)
+    addDirectoryItem(ph, plugin.url_for(plugin_recent, page=1), ListItem(tr(30218)), True)
     #addDirectoryItem(ph, plugin.url_for(plugin_playlists), ListItem(tr(30210)), True)
     addDirectoryItem(ph, plugin.url_for(plugin_playlist, name=quote_plus(tr(30211))), ListItem(tr(30211)), True)
     addDirectoryItem(ph, plugin.url_for(lbry_new, page=1), ListItem(tr(30202)), True)
@@ -264,6 +265,24 @@ def plugin_follows():
         ))
         li.addContextMenuItems(menu)
         addDirectoryItem(ph, plugin.url_for(lbry_channel, uri=serialize_uri(uri), page=1), li, True)
+    endOfDirectory(ph)
+
+@plugin.route('/recent/<page>')
+def plugin_recent(page):
+    page = int(page)
+    channels = load_channel_subs()
+    channel_ids = []
+    for (name,claim_id) in channels:
+        channel_ids.append(claim_id)
+    query = {'page': page, 'page_size': items_per_page, 'order_by': 'release_time', 'channel_ids': channel_ids}
+    if not ADDON.getSettingBool('server_filter_disable'):
+        query['stream_types'] = ['video']
+    result = call_rpc('claim_search', query)
+    items = result_to_itemlist(result['items'])
+    addDirectoryItems(ph, items, result['page_size'])
+    total_pages = int(result['total_pages'])
+    if total_pages > 1 and page < total_pages:
+        addDirectoryItem(ph, plugin.url_for(plugin_recent, page=page+1), ListItem(tr(30203)), True)
     endOfDirectory(ph)
 
 @plugin.route('/follows/add/<uri>')
