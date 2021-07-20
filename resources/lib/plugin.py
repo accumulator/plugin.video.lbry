@@ -7,10 +7,8 @@ from xbmcgui import ListItem, Dialog, NOTIFICATION_ERROR, Window, WindowXML
 from xbmcplugin import addDirectoryItem, addDirectoryItems, endOfDirectory, setContent, setResolvedUrl
 
 import routing
-import json
 import requests
 import time
-import os
 
 # python2 and 3
 try:
@@ -209,7 +207,7 @@ def clear_user_channel():
 
 class CommentWindow(WindowXML):
     def __init__(self, *args, **kwargs):
-        self.claim_id = kwargs['claim_id'].decode('raw_unicode_escape')
+        self.claim_id = kwargs['claim_id']
         self.verified_user_channel = False
         WindowXML.__init__(self, args, kwargs)
 
@@ -223,6 +221,7 @@ class CommentWindow(WindowXML):
                 ret = dialog.contextmenu([tr(30240)]) # Only allow refreshing
                 if ret == 0:
                     self.refresh()
+                return
 
             # No user channel. Allow user to select an account or refresh.
             if not get_user_channel():
