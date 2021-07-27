@@ -163,7 +163,7 @@ def result_to_itemlist(result, playlist='', channel=''):
 
             items.append((url, li))
         elif item['value_type'] == 'channel':
-            li = ListItem('[B]%s[/B]' % item['name'])
+            li = ListItem('[B]%s[/B] [I]#%s[/I]' % (item['name'], item['claim_id'][0:4]))
             li.setProperty('IsFolder','true')
             if 'thumbnail' in item['value'] and 'url' in item['value']['thumbnail']:
                 li.setArt({
@@ -171,7 +171,15 @@ def result_to_itemlist(result, playlist='', channel=''):
                     'poster': item['value']['thumbnail']['url'],
                     'fanart': item['value']['thumbnail']['url']
                 })
-            url = plugin.url_for(lbry_channel, uri=serialize_uri(item['name'] + '#' + item['claim_id']),page=1)
+            url = plugin.url_for(lbry_channel, uri=serialize_uri(item),page=1)
+
+            menu = []
+            ch_name = item['name']
+            menu.append((
+                tr(30205) % ch_name, 'RunPlugin(%s)' % plugin.url_for(plugin_follow, uri=serialize_uri(item))
+            ))
+            li.addContextMenuItems(menu)
+
             items.append((url, li, True))
         else:
             xbmc.log('ignored item, value_type=' + item['value_type'])
