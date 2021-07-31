@@ -198,20 +198,15 @@ def get_user_channel():
         toks = user_channel_str.split('#')
         if len(toks) == 2:
             return (toks[0], toks[1])
-        else:
-            ADDON.setSettingString('user_channel', '')
     return None
 
 def set_user_channel(channel_name, channel_id):
     ADDON.setSettingString('user_channel', "%s#%s" % (channel_name, channel_id))
 
-def clear_user_channel():
-    ADDON.setSettingString('user_channel', '')
-
 class CommentWindow(WindowXML):
     def __init__(self, *args, **kwargs):
         self.claim_id = kwargs['claim_id']
-        self.verified_user_channel = False
+        self.last_selected_position = -1
         WindowXML.__init__(self, args, kwargs)
 
     def onInit(self):
@@ -301,14 +296,6 @@ class CommentWindow(WindowXML):
 
                 ret = dialog.contextmenu(menu)
 
-                # Verify the user channel to ensure that it still exists before posting. If validation fails
-                # bail out.
-                if ret != -1:
-                    if not self.verified_user_channel:
-                        # if not self.verify_user_channel():
-                        #     return
-                        self.verified_user_channel = True
-
                 if ret == offsets[0]: # Like
                     self.like(comment_id)
                     item.setProperty('my_vote', str(1))
@@ -391,7 +378,20 @@ class CommentWindow(WindowXML):
         else:
             WindowXML.onAction(self, action)
 
+        # If an action changes the selected item position refresh the label
+        ccl = self.getCommentControlList()
+        if self.last_selected_position != ccl.getSelectedPosition():
+            if self.last_selected_position >= 0 and self.last_selected_position < ccl.size():
+                oldItem = ccl.getListItem(self.last_selected_position)
+                if oldItem:
+                    self.refresh_label(oldItem, False)
+            newItem = ccl.getSelectedItem()
+            if newItem:
+                self.refresh_label(newItem, True)
+            self.last_selected_position = ccl.getSelectedPosition()
+
     def refresh(self):
+        self.last_selected_position = -1
         progressDialog = xbmcgui.DialogProgress()
         progressDialog.create(tr(30219), tr(30220) + ' 1')
 
@@ -402,10 +402,11 @@ class CommentWindow(WindowXML):
 
         page = 1
         total_pages = result['total_pages']
+
         while page < total_pages:
-            progressDialog.update(int(100.0*page/total_pages), tr(30220) + " %s/%s" % (page + 1, total_pages))
             if progressDialog.iscanceled():
                 break
+            progressDialog.update(int(100.0*page/total_pages), tr(30220) + " %s/%s" % (page + 1, total_pages))
             page = page+1
             query['page'] = page
             result['items'] += call_rpc('comment_list', query)['items']
@@ -517,7 +518,7 @@ class CommentWindow(WindowXML):
         li_copy.setProperty('my_vote', li.getProperty('my_vote'))
         return li_copy
 
-    def refresh_label(self, li):
+    def refresh_label(self, li, selected=True):
         li.getProperty('id');
         channel_name = li.getProperty('channel_name')
         channel_id = li.getProperty('channel_id')
@@ -526,12 +527,13 @@ class CommentWindow(WindowXML):
         comment = li.getProperty('comment')
         indent = int(li.getProperty('indent'))
         my_vote = int(li.getProperty('my_vote'))
-        li.setLabel(self.create_label(channel_name, channel_id, likes, dislikes, comment, indent, my_vote))
+        li.setLabel(self.create_label(channel_name, channel_id, likes, dislikes, comment, indent, my_vote, selected))
 
-    def create_label(self, channel_name, channel_id, likes, dislikes, comment, indent, my_vote):
+    def create_label(self, channel_name, channel_id, likes, dislikes, comment, indent, my_vote, selected=False):
         user_channel = get_user_channel()
         if user_channel and user_channel[1] == channel_id:
-            channel_name = '[COLOR green]' + channel_name + '[/COLOR]'
+            color = 'red' if selected else 'green'
+            channel_name = '[COLOR ' + color + ']' + channel_name + '[/COLOR]'
 
         if my_vote == 1:
             likes = '[COLOR green]' + str(likes+1) + '[/COLOR]'
@@ -646,40 +648,7 @@ class CommentWindow(WindowXML):
 
         if selected_item['name'] != get_user_channel(): # Don't do extra work if the channel hasn't changed
             set_user_channel(selected_item['name'], selected_item['claim_id'])
-            self.verified_user_channel = True
             self.refresh()
-
-    def verify_user_channel(self, user_channel=get_user_channel()):
-        if not user_channel:
-            return False
-
-        progressDialog = xbmcgui.DialogProgress()
-        progressDialog.create(tr(30235), tr(30220) + ' 1') # Verifying user channel
-
-        page = 1
-        total_pages = 1
-        while page <= total_pages:
-            if progressDialog.iscanceled():
-                clear_user_channel()
-                return False
-            params = {'page' : page}
-            result = call_rpc('channel_list', params)
-            total_pages = result['total_pages']
-            if 'items' in result:
-                for item in result['items']:
-                    if item['claim_id'] == user_channel[1]:
-                        progressDialog.update(100, tr(30236)) # User verified
-                        xbmc.sleep(500)
-                        progressDialog.close()
-                        return True
-            page = page + 1
-            progressDialog.update(int(100.0*page/total_pages), tr(30220) + ' %s/%s' % (page, total_pages))
-
-        progressDialog.update(100, tr(30237)) # User could not be verified
-        xbmc.sleep(1000)
-        progressDialog.close()
-        clear_user_channel()
-        return False
 
 @plugin.route('/')
 def lbry_root():
