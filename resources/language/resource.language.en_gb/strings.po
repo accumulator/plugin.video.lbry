@@ -239,3 +239,19 @@ msgstr ""
 msgctxt "#30242"
 msgid "Waiting for response..."
 msgstr ""
+
+msgctxt "#30243"
+msgid "Select channel"
+msgstr ""
+
+msgctxt "#30244"
+msgid "Channel: "
+msgstr ""
+
+msgctxt "#30245"
+msgid "Clear channel"
+msgstr ""
+
+msgctxt "#30246"
+msgid "Login"
+msgstr ""

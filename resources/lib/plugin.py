@@ -203,6 +203,63 @@ def get_user_channel():
 def set_user_channel(channel_name, channel_id):
     ADDON.setSettingString('user_channel', "%s#%s" % (channel_name, channel_id))
 
+@plugin.route('/select_user_channel')
+def select_user_channel():
+    user_channel = ADDON.getSettingString('user_channel')
+
+    progressDialog = xbmcgui.DialogProgress()
+    progressDialog.create(tr(30231))
+
+    page = 1
+    total_pages = 1
+    items = []
+    while page <= total_pages:
+        if progressDialog.iscanceled():
+            break
+
+        try:
+            params = {'page' : page}
+            result = call_rpc('channel_list', params, errdialog=not using_lbry_proxy)
+            total_pages = result['total_pages']
+            if 'items' in result:
+                items += result['items']
+            else:
+                break
+        except:
+            pass
+
+        page = page + 1
+        progressDialog.update(int(100.0*page/total_pages), tr(30220) + ' %s/%s' % (page, total_pages))
+
+    if len(items) == 0:
+        progressDialog.update(100, tr(30232)) # No owned channels found
+        xbmc.sleep(1000)
+        progressDialog.close()
+        return
+    elif len(items) == 1:
+        progressDialog.update(100, tr(30233)) # Found single user
+        xbmc.sleep(1000)
+        progressDialog.close()
+
+        selected_item = items[0]
+    else:
+        progressDialog.update(100, tr(30234)) # Multiple users found
+        xbmc.sleep(1000)
+        progressDialog.close()
+
+        names = []
+        for item in items:
+            names.append(item['name'])
+        selected_name_index = dialog.select(tr(30239), names) # Post As
+        selected_item = items[selected_name_index]
+
+    if selected_item['name'] != get_user_channel(): # Don't do extra work if the channel hasn't changed
+        set_user_channel(selected_item['name'], selected_item['claim_id'])
+
+@plugin.route('/clear_user_channel')
+def clear_user_channel():
+    ADDON.setSettingString('user_channel', '')
+
 class CommentWindow(WindowXML):
     def __init__(self, *args, **kwargs):
         self.claim_id = kwargs['claim_id']
@@ -223,10 +280,8 @@ class CommentWindow(WindowXML):
 
             # No user channel. Allow user to select an account or refresh.
             if not get_user_channel():
-                ret = dialog.contextmenu([tr(30229), tr(30240)])
+                ret = dialog.contextmenu([tr(30240)])
                 if ret == 0:
-                    self.select_user_channel()
-                elif ret == 1:
                     self.refresh()
                 return
 
@@ -285,11 +340,6 @@ class CommentWindow(WindowXML):
                     offsets.append(invalid_offset)
                     offsets.append(invalid_offset)
                     offsets.append(invalid_offset)
-
-                menu.append(tr(30225)) # Change User
-                offsets.append(offset)
-
-                offset = offset + 1
 
                 menu.append(tr(30240)) # Refresh
                 offsets.append(offset)
@@ -369,10 +419,7 @@ class CommentWindow(WindowXML):
                     if ccl.size() == 0:
                         ccl.addItem(ListItem(label=tr(30230)))
 
-                elif ret == offsets[7]: # Select Account
-                    self.select_user_channel(True)
-
-                elif ret == offsets[8]: # Refresh
+                elif ret == offsets[7]: # Refresh
                     self.refresh()
 
         else:
@@ -594,61 +641,6 @@ class CommentWindow(WindowXML):
 
     def neutral(self, comment_id):
         self.react(comment_id)
-
-    def select_user_channel(self, select_if_set=False):
-        user_channel = ADDON.getSettingString('user_channel')
-
-        if user_channel and not select_if_set:
-            return
-
-        progressDialog = xbmcgui.DialogProgress()
-        progressDialog.create(tr(30231))
-
-        page = 1
-        total_pages = 1
-        items = []
-        while page <= total_pages:
-            if progressDialog.iscanceled():
-                break
-
-            params = {'page' : page}
-            result = call_rpc('channel_list', params)
-            total_pages = result['total_pages']
-            if 'items' in result:
-                items += result['items']
-            else:
-                break
-
-            page = page + 1
-            progressDialog.update(int(100.0*page/total_pages), tr(30220) + ' %s/%s' % (page, total_pages))
-
-        if len(items) == 0:
-            progressDialog.update(100, tr(30232)) # No owned channels found
-            xbmc.sleep(1000)
-            progressDialog.close()
-
-            self.post_channel = None
-            return
-        elif len(items) == 1:
-            progressDialog.update(100, tr(30233)) # Found single user
-            xbmc.sleep(1000)
-            progressDialog.close()
-
-            selected_item = items[0]
-        else:
-            progressDialog.update(100, tr(30234)) # Multiple users found
-            xbmc.sleep(1000)
-            progressDialog.close()
-
-            names = []
-            for item in items:
-                names.append(item['name'])
-            selected_name_index = dialog.select(tr(30239), names) # Post As
-            selected_item = items[selected_name_index]
-
-        if selected_item['name'] != get_user_channel(): # Don't do extra work if the channel hasn't changed
-            set_user_channel(selected_item['name'], selected_item['claim_id'])
-            self.refresh()
 
 @plugin.route('/')
 def lbry_root():
