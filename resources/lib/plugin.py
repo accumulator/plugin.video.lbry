@@ -225,7 +225,7 @@ def select_user_channel():
         try:
             params = {'page' : page}
             result = call_rpc('channel_list', params, errdialog=not using_lbry_proxy)
-            total_pages = result['total_pages']
+            total_pages = max(result['total_pages'], 1) # Total pages returns 0 if empty
             if 'items' in result:
                 items += result['items']
             else:
@@ -255,11 +255,12 @@ def select_user_channel():
         names = []
         for item in items:
             names.append(item['name'])
-        selected_name_index = dialog.select(tr(30239), names) # Post As
-        selected_item = items[selected_name_index]
 
-    if selected_item['name'] != get_user_channel(): # Don't do extra work if the channel hasn't changed
-        set_user_channel(selected_item['name'], selected_item['claim_id'])
+        selected_name_index = dialog.select(tr(30239), names) # Post As
+
+        if selected_name_index >= 0: # If not cancelled
+            selected_item = items[selected_name_index]
+            set_user_channel(selected_item['name'], selected_item['claim_id'])
 
 @plugin.route('/clear_user_channel')
 def clear_user_channel():
@@ -293,7 +294,7 @@ class CommentWindow(WindowXML):
             # User channel selected. Allow comment manipulation.
             user_channel = get_user_channel()
             if get_user_channel():
-                ccl = self.getCommentControlList()
+                ccl = self.get_comment_control_list()
                 selected_pos = ccl.getSelectedPosition()
                 item = ccl.getSelectedItem()
 
@@ -431,7 +432,7 @@ class CommentWindow(WindowXML):
             WindowXML.onAction(self, action)
 
         # If an action changes the selected item position refresh the label
-        ccl = self.getCommentControlList()
+        ccl = self.get_comment_control_list()
         if self.last_selected_position != ccl.getSelectedPosition():
             if self.last_selected_position >= 0 and self.last_selected_position < ccl.size():
                 oldItem = ccl.getListItem(self.last_selected_position)
@@ -447,7 +448,7 @@ class CommentWindow(WindowXML):
         progressDialog = xbmcgui.DialogProgress()
         progressDialog.create(tr(30219), tr(30220) + ' 1')
 
-        ccl = self.getCommentControlList()
+        ccl = self.get_comment_control_list()
 
         query = { 'include_replies' : True, 'visible' : False, 'hidden' : False, 'page' : 1, 'claim_id' : self.claim_id, 'page_size' : 50 }
         result = call_rpc('comment_list', query)
@@ -543,7 +544,7 @@ class CommentWindow(WindowXML):
         progressDialog.update(100)
         progressDialog.close()
 
-    def getCommentControlList(self):
+    def get_comment_control_list(self):
         return self.getControl(1)
 
     def create_list_item(self, comment_id, channel_name, channel_id, likes, dislikes, comment, indent, my_vote):
