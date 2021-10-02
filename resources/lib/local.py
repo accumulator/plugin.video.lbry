@@ -30,20 +30,22 @@ def load_channel_subs():
 
 def save_channel_subs(channels):
     try:
-        with xbmcvfs.File(get_profile_path('channel_subs'), 'w') as f:
-            for (name, claim_id) in channels:
-                f.write(bytearray(name.encode('utf-8')))
-                f.write('#')
-                f.write(bytearray(claim_id.encode('utf-8')))
-                f.write('\n')
+        f = xbmcvfs.File(get_profile_path('channel_subs'), 'w')
+        for (name, claim_id) in channels:
+            f.write(bytearray(name.encode('utf-8')))
+            f.write('#')
+            f.write(bytearray(claim_id.encode('utf-8')))
+            f.write('\n')
+        f.close()
     except Exception as e:
         xbmcgui.Dialog().notification(tr(30104), str(e), xbmcgui.NOTIFICATION_ERROR)
 
 def load_playlist(name):
     items = []
     try:
-        with xbmcvfs.File(get_profile_path(name + '.list'), 'r') as f:
-            lines = f.readBytes()
+        f = xbmcvfs.File(get_profile_path(name + '.list'), 'r')
+        lines = f.readBytes()
+        f.close()
     except Exception as e:
         pass
     lines = lines.decode('utf-8')
@@ -54,9 +56,10 @@ def load_playlist(name):
 
 def save_playlist(name, items):
     try:
-        with xbmcvfs.File(get_profile_path(name + '.list'), 'w') as f:
-            for item in items:
-                f.write(bytearray(item.encode('utf-8')))
-                f.write('\n')
+        f = xbmcvfs.File(get_profile_path(name + '.list'), 'w')
+        for item in items:
+            f.write(bytearray(item.encode('utf-8')))
+            f.write('\n')
+        f.close()
     except Exception as e:
         xbmcgui.Dialog().notification(tr(30104), str(e), xbmcgui.NOTIFICATION_ERROR)
