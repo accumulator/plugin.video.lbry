@@ -95,7 +95,7 @@ def serialize_uri(item):
 def serialize_comment_uri(item):
     if 'signing_channel' in item and 'name' in item['signing_channel'] and 'claim_id' in item['signing_channel']:
         signing_channel = item['signing_channel']
-        return quote(signing_channel['name'] + '#' + signing_channel['claim_id'] + '#' + item['claim_id'])
+        return quote(signing_channel['name'].encode('utf-8') + '#' + signing_channel['claim_id'].encode('utf-8') + '#' + item['claim_id'].encode('utf-8'))
     return None
 
 def deserialize_uri(item):
