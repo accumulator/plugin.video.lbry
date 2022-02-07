@@ -101,16 +101,13 @@ def sign(data):
     if not user_channel:
         return None
 
-    def to_hex(s):
-      res = '';
-      for c in s:
-        ch = format(ord(c), 'x')
-        if len(ch) % 2 == 1:
-            ch = '0' + ch;
-        res += ch
-      return res
+    # assume data type is str
+    if type(data) is not str:
+        raise Exception('attempt to sign non-str type')
 
-    return call_rpc('channel_sign', params={'channel_id':user_channel[1],'hexdata':to_hex(data)})
+    toHex = lambda x : "".join([format(ord(c),'02x') for c in x])
+
+    return call_rpc('channel_sign', params={'channel_id': user_channel[1], 'hexdata': toHex(bdata)})
 
 
 def serialize_uri(item):
