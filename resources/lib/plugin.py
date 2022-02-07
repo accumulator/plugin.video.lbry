@@ -22,6 +22,11 @@ if lbry_api_url == '':
     raise Exception('Lbry API URL is undefined.')
 using_lbry_proxy = lbry_api_url.find('api.lbry.tv') != -1
 
+# assure profile directory exists
+profile_path = ADDON.getAddonInfo('profile')
+if not xbmcvfs.exists(profile_path):
+    xbmcvfs.mkdir(profile_path)
+
 items_per_page = ADDON.getSettingInt('items_per_page')
 nsfw = ADDON.getSettingBool('nsfw')
 
