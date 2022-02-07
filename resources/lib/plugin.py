@@ -292,6 +292,8 @@ def select_user_channel():
         page = page + 1
         progressDialog.update(int(100.0*page/total_pages), tr(30220) + ' %s/%s' % (page, total_pages))
 
+    selected_item = None
+
     if len(items) == 0:
         progressDialog.update(100, tr(30232)) # No owned channels found
         xbmc.sleep(1000)
@@ -316,7 +318,9 @@ def select_user_channel():
 
         if selected_name_index >= 0: # If not cancelled
             selected_item = items[selected_name_index]
-            set_user_channel(selected_item['name'], selected_item['claim_id'])
+
+    if selected_item:
+        set_user_channel(selected_item['name'], selected_item['claim_id'])
 
 @plugin.route('/clear_user_channel')
 def clear_user_channel():
