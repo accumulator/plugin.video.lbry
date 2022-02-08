@@ -257,11 +257,15 @@ def get_user_channel():
 
 def set_user_channel(channel_name, channel_id):
     ADDON.setSettingString('user_channel', "%s#%s" % (channel_name, channel_id))
+    ADDON.setSettingString('user_channel_vis', "%s#%s" % (channel_name, channel_id[:5]))
+
+@plugin.route('/clear_user_channel')
+def clear_user_channel():
+    ADDON.setSettingString('user_channel', '')
+    ADDON.setSettingString('user_channel_vis', '')
 
 @plugin.route('/select_user_channel')
 def select_user_channel():
-    user_channel = ADDON.getSettingString('user_channel')
-
     progressDialog = xbmcgui.DialogProgress()
     progressDialog.create(tr(30231))
 
@@ -315,10 +319,6 @@ def select_user_channel():
 
     if selected_item:
         set_user_channel(selected_item['name'], selected_item['claim_id'])
-
-@plugin.route('/clear_user_channel')
-def clear_user_channel():
-    ADDON.setSettingString('user_channel', '')
 
 class CommentWindow(WindowXML):
     def __init__(self, *args, **kwargs):
