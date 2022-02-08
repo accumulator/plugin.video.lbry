@@ -734,7 +734,7 @@ def lbry_root():
     addDirectoryItem(ph, plugin.url_for(plugin_recent, page=1), ListItem(tr(30218)), True)
     #addDirectoryItem(ph, plugin.url_for(plugin_playlists), ListItem(tr(30210)), True)
     addDirectoryItem(ph, plugin.url_for(plugin_playlist, name=quote_plus(tr(30211))), ListItem(tr(30211)), True)
-    addDirectoryItem(ph, plugin.url_for(lbry_new, page=1), ListItem(tr(30202)), True)
+    #addDirectoryItem(ph, plugin.url_for(lbry_new, page=1), ListItem(tr(30202)), True)
     addDirectoryItem(ph, plugin.url_for(lbry_search), ListItem(tr(30201)), True)
     endOfDirectory(ph)
 
